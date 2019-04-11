@@ -1,75 +1,30 @@
 ﻿using EnvDTE;
-using Microsoft.VisualStudio.Shell;
-using Microsoft.VisualStudio.Shell.Interop;
-using static AntDeploy.Models.ProjectKinds;
-using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using System;
-using System.IO;
 using System.Collections.Generic;
-using System.Linq;
+using System.Configuration;
 using System.Diagnostics;
-using System.Globalization;
+using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
 using System.Text.RegularExpressions;
-using AntDeploy.Util;
-using Microsoft.Win32;
+using Microsoft.Build.Utilities;
+using static AntDeploy.Models.ProjectKinds;
 
 namespace AntDeploy.Models
 {
     internal static class ProjectHelper
     {
-
-        /// <summary>
-        /// 获取Windows服务的名称
-        /// </summary>
-        /// <param name="serviceFileName">文件路径</param>
-        /// <returns>服务名称</returns>
-        public static string GetServiceNameByFile(string serviceFileName)
+        public static string GetMsBuildPath()
         {
-            try
-            {
-
-                Assembly assembly = Assembly.LoadFrom(serviceFileName);
-                Type[] types = assembly.GetTypes();
-                foreach (Type myType in types)
-                {
-                    if (myType.IsClass && myType.BaseType == typeof(System.Configuration.Install.Installer))
-                    {
-                        FieldInfo[] fieldInfos = myType.GetFields(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Default | BindingFlags.Instance | BindingFlags.Static);
-                        foreach (FieldInfo myFieldInfo in fieldInfos)
-                        {
-                            if (myFieldInfo.FieldType == typeof(System.ServiceProcess.ServiceInstaller))
-                            {
-                                var re = "";
-                                var obj = Activator.CreateInstance(myType);
-                                using (ServiceInstaller serviceInstaller = (ServiceInstaller)myFieldInfo.GetValue(obj))
-                                {
-                                     re = serviceInstaller.ServiceName;
-                                }
-                               
-                                var dis = obj as IDisposable;
-                                if (dis != null)
-                                {
-                                    dis.Dispose();
-                                }
-                                return re;
-                            }
-                        }
-                    }
-                }
-                return "";
-            }
-            catch (Exception ex)
-            {
-                return "";
-            }
+            var getmS = ToolLocationHelper.GetPathToBuildTools(ToolLocationHelper.CurrentToolsVersion);
+            return getmS;
         }
-
+        
         public static bool IsWebProject(Project project)
         {
             try
@@ -95,27 +50,6 @@ namespace AntDeploy.Models
         }
 
 
-        public static string GetProjectSkdInNetCoreProject(string projectPath)
-        {
-            try
-            {
-                var info = File.ReadAllText(projectPath);
-                var TargetFramework = info.Split(new string[] { "TargetFramework>" }, StringSplitOptions.None)[1]
-                    .Split(new string[] { "<" }, StringSplitOptions.None)[0];
-                var version = Regex.Replace(TargetFramework, "[a-zA-Z]+", "").Trim();
-                var temp = version.Replace(".", "");
-                if (int.TryParse(temp, out _))
-                {
-                    return version;
-                }
-                return string.Empty;
-            }
-            catch (Exception)
-            {
-                return string.Empty;
-            }
-
-        }
 
         public static bool IsDotNetCoreProject(Project project)
         {
@@ -167,47 +101,8 @@ namespace AntDeploy.Models
             }
         }
 
-        public static string GetPluginInstallPath()
-        {
-            try
-            {
-                var consoleAssemblyLocation = new Uri(typeof(ProjectHelper).Assembly.CodeBase);
-                var file = new FileInfo(consoleAssemblyLocation.LocalPath);
-                if (file.Exists)
-                {
-                    return file.Directory.FullName;
-                }
-                return string.Empty;
-            }
-            catch (Exception)
-            {
-                return string.Empty;
-            }
-        }
-
-        public static string GetPluginConfigPath(string projectName = null)
-        {
-            try
-            {
-                var path =Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                var folderName = Path.Combine(path, "AntDeploy");
-                if (!string.IsNullOrEmpty(folderName))
-                {
-                    if (!Directory.Exists(folderName))
-                    {
-                        Directory.CreateDirectory(folderName);
-                    }
-
-                    return Path.Combine(folderName, string.IsNullOrEmpty(projectName)? "AntDeploy.json": CodingHelper.MD5(projectName) + ".json");
-                }
-                return string.Empty;
-            }
-            catch (Exception)
-            {
-                return string.Empty;
-            }
-        }
-        
+      
+      
 
         public const string SolutionItemsFolder = "Solution Items";
 
