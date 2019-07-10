@@ -9,7 +9,9 @@ using System.Net.Security;
 using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
+using AntDeployWinform.Models;
 
 namespace AntDeployWinform.Util
 {
@@ -106,10 +108,10 @@ namespace AntDeployWinform.Util
             return true;
         }
 
-        public static bool IsHttpGetOk(string url, Logger logger)
+        public static bool IsHttpGetOk(string url, Logger logger,string agentNewVersion = null)
         {
             var retyrTimes = 0;
-
+            var needLog = agentNewVersion != null;
             RETRY:
             var needRetry = false;
             try
@@ -132,8 +134,36 @@ namespace AntDeployWinform.Util
                 //{
                 //    logger.Warn($"Fire WebSite Url Fail: the page was redirected!");
                 //}
-
+                
                 logger.Info($"Fire WebSite Url Response StatusCode:{(int)WResp.StatusCode}");
+
+                if (needLog && (((int)WResp.StatusCode) == 200))
+                {
+                    using (Stream stream = WResp.GetResponseStream())
+                    {
+                        var reader = new StreamReader(stream);
+                        var result = reader.ReadToEnd();
+                        if (!string.IsNullOrEmpty(result))
+                        {
+                            WResp.Close();
+
+                            if (agentNewVersion.StartsWith(result))
+                            {
+                                logger.Info("Website Response:" + result);
+                                return true;
+                            }
+                            else
+                            {
+                                throw new Exception("agent check fail");
+                            }
+                        }
+                        else
+                        {
+                            throw new Exception("agent check fail");
+                        }
+                    }
+                }
+
                 if (((int)WResp.StatusCode) < 400)
                 {
                     WResp.Close();
@@ -144,6 +174,7 @@ namespace AntDeployWinform.Util
             catch (Exception ex1)
             {
                 retyrTimes++;
+                
                 if (retyrTimes > 6)
                 {
                     logger.Warn($"Fire WebSite Url Fail:{ex1.Message}");
@@ -157,12 +188,16 @@ namespace AntDeployWinform.Util
             }
             if (needRetry)
             {
+                if (needLog)
+                {
+                    Thread.Sleep(2000);
+                }
                 goto RETRY;
             }
             return false;
         }
 
-        public static async Task<T> HttpPostAsync<T>(string url, object json, Logger logger)
+        public static async Task<T> HttpPostAsync<T>(string url, object json, Logger logger, bool ignore = false) 
         {
             string result = string.Empty;
             try
@@ -193,8 +228,36 @@ namespace AntDeployWinform.Util
                 }
                 if (!string.IsNullOrEmpty(result))
                 {
-                    return JsonConvert.DeserializeObject<T>(result);
+                    try
+                    {
+                        var rt = JsonConvert.DeserializeObject<T>(result);
+                        return rt;
+                    }
+                    catch (Exception)
+                    {
+                        try
+                        {
+                            if (ignore)
+                            {
+                                return default(T);
+                            }
+
+                            var rr = JsonConvert.DeserializeObject<GetVersionResult>(result);
+                            if (rr != null && !string.IsNullOrEmpty(rr.Msg))
+                            {
+                                logger.Error(rr.Msg);
+                                return default(T);
+                            }
+                        }
+                        catch (Exception)
+                        {
+                            
+                        }
+                        logger.Error(result);
+                    }
                 }
+
+                return default(T);
             }
             catch (Exception ex1)
             {

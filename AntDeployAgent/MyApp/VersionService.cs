@@ -8,6 +8,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using AntDeployAgent.Model;
 using AntDeployAgent.Util;
 
 namespace AntDeployAgentWindows.MyApp
@@ -26,7 +27,8 @@ namespace AntDeployAgentWindows.MyApp
 
                 if (string.IsNullOrEmpty(body))
                 {
-                    WriteError("request body is empty");
+                    Response.ContentType = "text/plain";
+                    Response.Write(Version.VERSION);
                     return;
                 }
 
@@ -54,8 +56,14 @@ namespace AntDeployAgentWindows.MyApp
                     case "iis":
                         GetIisVersionList(request);
                         break;
+                    case "checkiis":
+                        CheckIIs(request);
+                        break;
                     case "winservice":
                         GetWindowsServiceVersionList(request);
+                        break;
+                    case "checkwinservice":
+                        CheckWinservice(request);
                         break;
                     default:
                         WriteError("request Type is invaild");
@@ -68,8 +76,110 @@ namespace AntDeployAgentWindows.MyApp
             }
         }
 
+        /// <summary>
+        /// 检查windows服务是否已存在
+        /// </summary>
+        /// <param name="request"></param>
+        private void CheckWinservice(GetVersionVm request)
+        {
+            if (string.IsNullOrEmpty(request.Name))
+            {
+                WriteError("service name required!");
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(request.Mac) && !Setting.CheckIsInWhiteMacList(request.Mac))
+            {
+                WriteError($"macAddress:[{request.Mac}] invalid");
+                return;
+            }
+
+            var serviceName = request.Name.Trim();
+            var service = WindowServiceHelper.GetWindowServiceByName(serviceName);
+
+            if (!string.IsNullOrEmpty(service.Item2))
+            {
+                WriteError(service.Item2);
+                return;
+            }
+
+            CheckExistResult result = new CheckExistResult {WebSiteName = serviceName, Success = service.Item1!=null};
+            WriteSuccess(result);
+        }
+
+        /// <summary>
+        /// 检查IIS中是否存在指定网站
+        /// </summary>
+        /// <param name="request"></param>
+        private void CheckIIs(GetVersionVm request)
+        {
+            if (string.IsNullOrEmpty(request.Name))
+            {
+                WriteError("web site name required!");
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(request.Mac) && !Setting.CheckIsInWhiteMacList(request.Mac))
+            {
+                WriteError($"macAddress:[{request.Mac}] invalid");
+                return;
+            }
+
+            var webSiteName = request.Name.Trim();
+            var siteNameArr = webSiteName.Split('/');
+            if (siteNameArr.Length > 2)
+            {
+                WriteError("webSiteName level limit is 2");
+                return;
+            }
+
+            var level1 = siteNameArr[0];
+            var level2 = siteNameArr.Length == 2 ? siteNameArr[1] : string.Empty;
+
+            var isSiteExistResult = IISHelper.IsSiteExist(level1, level2);
+            if (!string.IsNullOrEmpty(isSiteExistResult.Item3))
+            {
+                WriteError(isSiteExistResult.Item3);
+                return;
+            }
+
+            var iisVersion = IISHelper.GetIISVersion();
+            if (iisVersion <= 6)
+            {
+                WriteError($"remote iis verison is too low!");
+                return;
+            }
+
+            CheckExistResult result = new CheckExistResult();
+            result.WebSiteName = webSiteName;
+            result.Level1Name = level1;
+            result.Level1Exist = isSiteExistResult.Item1;
+            if (!isSiteExistResult.Item1)
+            {
+                //一级不存在 那肯定要输入了 端口号必填
+                result.Level1Exist = false;
+            }
+            else if (isSiteExistResult.Item1 && !isSiteExistResult.Item2 && !string.IsNullOrEmpty(level2))
+            {
+                //一级存在二级不存在 不用填端口号
+                result.Level2Exist =false;
+            }
+            else
+            {
+                result.Success = true;
+            }
+
+            WriteSuccess(result);
+        }
+
         private void GetWindowsServiceVersionList(GetVersionVm request)
         {
+            if (!string.IsNullOrEmpty(request.Mac) && !Setting.CheckIsInWhiteMacList(request.Mac))
+            {
+                WriteError($"macAddress:[{request.Mac}] invalid");
+                return;
+            }
+
             string requestName = request.Name;
             var projectPath = Path.Combine(Setting.PublishWindowServicePathFolder, requestName);
             if (!Directory.Exists(projectPath))
@@ -79,17 +189,18 @@ namespace AntDeployAgentWindows.MyApp
             }
 
             var all = Directory.GetDirectories(projectPath).ToList();
-            if (all.Count < 2)
+            if (all.Count < 1)
             {
                 WriteError("there is no rollback version yet in publisher folder:" + projectPath);
                 return;
             }
 
-            var list = new List<Tuple<string, DateTime>>();
+            var dic = new Dictionary<string,Tuple<string,DateTime,string>>();
             foreach (var item in all)
             {
                 var itemD = new DirectoryInfo(item);
-                if (DateTime.TryParseExact(itemD.Name, "yyyyMMddHHmmss", null, DateTimeStyles.None, out DateTime d))
+                var temp = itemD.Name.Replace("_", "");
+                if (DateTime.TryParseExact(temp, "yyyyMMddHHmmss", null, DateTimeStyles.None, out DateTime d))
                 {
                     if (request.WithArgs)
                     {
@@ -100,16 +211,30 @@ namespace AntDeployAgentWindows.MyApp
                             Args = args
                         };
                         var dataInfo = JsonConvert.SerializeObject(data);
-                        list.Add(new Tuple<string, DateTime>(dataInfo, d));
+                        if (dic.ContainsKey(temp))
+                        {
+                            //是重试版本 看下已存在的length是否
+                            var infoValue = dic[temp];
+                            if (infoValue.Item3.Length < itemD.Name.Length)
+                            {
+                                //是旧的 替换掉
+                                dic[temp] = new Tuple<string, DateTime, string>(dataInfo, d, itemD.Name);
+                            }
+                        }
+                        else
+                        {
+                            //添加
+                            dic.Add(temp,new Tuple<string, DateTime,string>(dataInfo, d,itemD.Name));
+                        }
                     }
                     else
                     {
-                        list.Add(new Tuple<string, DateTime>(itemD.Name, d));
+                        dic.Add(temp,new Tuple<string, DateTime,string>(itemD.Name, d,itemD.Name));
                     }
                 }
             }
 
-            var result = list.OrderByDescending(r => r.Item2).Select(r => r.Item1).Skip(1).Take(10).ToList();
+            var result = dic.Values.ToList().OrderByDescending(r => r.Item2).Select(r => r.Item1).Take(11).ToList();
             WriteSuccess(result);
         }
 
@@ -132,19 +257,19 @@ namespace AntDeployAgentWindows.MyApp
             }
 
             var all = Directory.GetDirectories(projectPath).ToList();
-            if (all.Count < 2)
+            if (all.Count < 1)
             {
                 //只有当前版本
                 WriteError("there is no rollback version yet in publisher folder:" + projectPath);
                 return;
             }
 
-
-            var list = new List<Tuple<string, DateTime>>();
+            var dic = new Dictionary<string,Tuple<string,DateTime,string>>();
             foreach (var item in all)
             {
                 var itemD = new DirectoryInfo(item);
-                if (DateTime.TryParseExact(itemD.Name, "yyyyMMddHHmmss", null, DateTimeStyles.None, out DateTime d))
+                var temp = itemD.Name.Replace("_", "");
+                if (DateTime.TryParseExact(temp, "yyyyMMddHHmmss", null, DateTimeStyles.None, out DateTime d))
                 {
                     if (request.WithArgs)
                     {
@@ -155,17 +280,31 @@ namespace AntDeployAgentWindows.MyApp
                             Args = args
                         };
                         var dataInfo = JsonConvert.SerializeObject(data);
-                        list.Add(new Tuple<string, DateTime>(dataInfo, d));
+                        if (dic.ContainsKey(temp))
+                        {
+                            //是重试版本 看下已存在的length是否
+                            var infoValue = dic[temp];
+                            if (infoValue.Item3.Length < itemD.Name.Length)
+                            {
+                                //是旧的 替换掉
+                                dic[temp] = new Tuple<string, DateTime, string>(dataInfo, d, itemD.Name);
+                            }
+                        }
+                        else
+                        {
+                            //添加
+                            dic.Add(temp,new Tuple<string, DateTime,string>(dataInfo, d,itemD.Name));
+                        }
                     }
                     else
                     {
-                        list.Add(new Tuple<string, DateTime>(itemD.Name, d));
+                        dic.Add(temp,new Tuple<string, DateTime,string>(itemD.Name, d,itemD.Name));
                     }
                 }
             }
 
             //排除掉当前版本 然后拿最近的10条发布记录
-            var result = list.OrderByDescending(r => r.Item2).Select(r => r.Item1).Skip(1).Take(10).ToList();
+            var result = dic.Values.ToList().OrderByDescending(r => r.Item2).Select(r => r.Item1).Take(11).ToList();
             WriteSuccess(result);
         }
 
@@ -196,6 +335,7 @@ namespace AntDeployAgentWindows.MyApp
             obj.Msg = errMsg;
             obj.Data = new List<string>();
             Response.ContentType = "application/json";
+            Response.StatusCode = 200;
             Response.Write(JsonConvert.SerializeObject(obj));
         }
 
@@ -204,6 +344,17 @@ namespace AntDeployAgentWindows.MyApp
             DeployResult<List<string>> obj = new DeployResult<List<string>>();
             obj.Success = true;
             obj.Data = data ?? new List<string>();
+            Response.StatusCode = 200;
+            Response.ContentType = "application/json";
+            Response.Write(JsonConvert.SerializeObject(obj));
+        }
+
+        private void WriteSuccess<T>(T data)
+        {
+            DeployResult<T> obj = new DeployResult<T>();
+            obj.Success = true;
+            obj.Data = data;
+            Response.StatusCode = 200;
             Response.ContentType = "application/json";
             Response.Write(JsonConvert.SerializeObject(obj));
         }

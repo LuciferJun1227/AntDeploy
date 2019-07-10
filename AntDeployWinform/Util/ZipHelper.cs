@@ -6,6 +6,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text.RegularExpressions;
 using ICSharpCode.SharpZipLib.Zip;
+using NLog;
 
 namespace AntDeployWinform.Util
 {
@@ -118,12 +119,13 @@ namespace AntDeployWinform.Util
         }
 
 
-        public static byte[] DoCreateFromDirectory(string sourceDirectoryName, List<string> fileList, CompressionLevel? compressionLevel, bool includeBaseDirectory, List<string> ignoreList = null, Action<int> progress = null,bool isSelectDeploy = false)
+        public static byte[] DoCreateFromDirectory(string sourceDirectoryName, List<string> fileList, CompressionLevel? compressionLevel, bool includeBaseDirectory, List<string> ignoreList = null, Func<int,bool> progress = null,bool isSelectDeploy = false)
         {
             //if (ignoreList != null)
             //{
             //    ignoreList.Add("/.git?");
             //}
+            var haveFile = false;
             sourceDirectoryName = Path.GetFullPath(sourceDirectoryName);
             using (var outStream = new MemoryStream())
             {
@@ -137,16 +139,25 @@ namespace AntDeployWinform.Util
                     var allFile = isSelectDeploy? GetSelectDeployFiles(fileList) : GetFullFileInfo(fileList, sourceDirectoryName);
                     var allFileLength = allFile.Count();
                     var index = 0;
+
                     foreach (FileSystemInfo enumerateFileSystemInfo in allFile)
                     {
                         index++;
                         var lastProgressNumber = (((long)index * 100 / allFileLength));
-                        progress?.Invoke((int)lastProgressNumber);
+                        if (progress != null)
+                        {
+                            var r = progress.Invoke((int)lastProgressNumber);
+                            if (r)
+                            {
+                                throw new  Exception("deploy task was canceled!");
+                            }
+                        }
+                      
                         flag = false;
                         int length = enumerateFileSystemInfo.FullName.Length - fullName.Length;
                         string entryName = EntryFromPath(enumerateFileSystemInfo.FullName, fullName.Length, length);
                         var mathchEntryName = entryName.Substring(directoryInfo.Name.Length);
-                        if (ignoreList != null)
+                        if (ignoreList != null && ignoreList.Count > 0)
                         {
                             var haveMatch = false;
                             foreach (var ignorRule in ignoreList)
@@ -186,6 +197,7 @@ namespace AntDeployWinform.Util
                         }
                         if (enumerateFileSystemInfo is FileInfo)
                         {
+                            haveFile = true;
                             DoCreateEntryFromFile(destination, enumerateFileSystemInfo.FullName, entryName, compressionLevel);
                         }
                         else
@@ -202,6 +214,10 @@ namespace AntDeployWinform.Util
                         destination.CreateEntry(str + s_pathSeperator.ToString());
                     }
                 }
+                if (!haveFile)
+                {
+                    throw new Exception("no file was packaged!");
+                }
                 return outStream.GetBuffer();
             }
         }
@@ -213,12 +229,13 @@ namespace AntDeployWinform.Util
         /// <param name="compressionLevel"></param>
         /// <param name="includeBaseDirectory"></param>
         /// <returns></returns>
-        public static byte[] DoCreateFromDirectory(string sourceDirectoryName, CompressionLevel? compressionLevel, bool includeBaseDirectory, List<string> ignoreList = null, Action<int> progress = null)
+        public static byte[] DoCreateFromDirectory(string sourceDirectoryName, CompressionLevel? compressionLevel, bool includeBaseDirectory, List<string> ignoreList = null, Func<int,bool> progress = null)
         {
             //if (ignoreList != null)
             //{
             //    ignoreList.Add("/.git?");
             //}
+            var haveFile = false;
             sourceDirectoryName = Path.GetFullPath(sourceDirectoryName);
             using (var outStream = new MemoryStream())
             {
@@ -236,12 +253,20 @@ namespace AntDeployWinform.Util
                     {
                         index++;
                         var lastProgressNumber = (((long)index * 100 / allFileLength));
-                        progress?.Invoke((int)lastProgressNumber);
+                        if (progress != null)
+                        {
+                           var r = progress.Invoke((int)lastProgressNumber);
+                           if (r)
+                           {
+                               throw new Exception("deploy task was canceled!");
+                           }
+                        }
+                        
                         flag = false;
                         int length = enumerateFileSystemInfo.FullName.Length - fullName.Length;
                         string entryName = EntryFromPath(enumerateFileSystemInfo.FullName, fullName.Length, length);
                         var mathchEntryName = entryName.Substring(directoryInfo.Name.Length);
-                        if (ignoreList != null)
+                        if (ignoreList != null && ignoreList.Count > 0)
                         {
                             var haveMatch = false;
                             foreach (var ignorRule in ignoreList)
@@ -281,6 +306,7 @@ namespace AntDeployWinform.Util
                         }
                         if (enumerateFileSystemInfo is FileInfo)
                         {
+                            haveFile = true;
                             DoCreateEntryFromFile(destination, enumerateFileSystemInfo.FullName, entryName, compressionLevel);
                         }
                         else
@@ -296,6 +322,10 @@ namespace AntDeployWinform.Util
                         string str = directoryInfo.Name;
                         destination.CreateEntry(str + s_pathSeperator.ToString());
                     }
+                }
+                if (!haveFile)
+                {
+                    throw new Exception("no file was packaged!");
                 }
                 return outStream.GetBuffer();
             }
@@ -388,7 +418,8 @@ namespace AntDeployWinform.Util
             }
         }
 
-        public static MemoryStream DoCreateTarFromDirectory(string sourceDirectory, List<string> ignoreList = null, Action<int> progress = null)
+
+        public static MemoryStream DoCreateTarFromDirectory(string sourceDirectory,List<string> ignoreList = null, Func<int, bool> progress = null, Logger logger = null)
         {
             MemoryStream outputMemStream = new MemoryStream();
             TarArchive tarArchive = TarArchive.CreateOutputTarArchive(outputMemStream);
@@ -407,16 +438,24 @@ namespace AntDeployWinform.Util
             var allFile = FindFileDir(sourceDirectory);
             var allFileLength = allFile.Count();
             var index = 0;
-
+            var haveFile = false;
             foreach (FileSystemInfo enumerateFileSystemInfo in allFile)
             {
                 index++;
                 var lastProgressNumber = (((long)index * 100 / allFileLength));
-                progress?.Invoke((int)lastProgressNumber);
+                if (progress != null)
+                {
+                    var r = progress.Invoke((int)lastProgressNumber);
+                    if (r)
+                    {
+                        throw new Exception("deploy task was canceled!");
+                    }
+                }
+
 
                 int length = enumerateFileSystemInfo.FullName.Length - fullName.Length;
                 string entryName = EntryFromPath(enumerateFileSystemInfo.FullName, fullName.Length, length);
-                if (ignoreList != null)
+                if (ignoreList != null && ignoreList.Count > 0)
                 {
                     var mathchEntryName = entryName.Substring(directoryInfo.Name.Length);
                     var haveMatch = false;
@@ -458,6 +497,11 @@ namespace AntDeployWinform.Util
 
                 if (enumerateFileSystemInfo is FileInfo)
                 {
+                    if (entryName.Contains("Dockerfile"))
+                    {
+                        logger?.Info($"Find Dockerfile In Package: {entryName}");
+                    }
+                    haveFile = true;
                     TarEntry tarEntry = TarEntry.CreateEntryFromFile(enumerateFileSystemInfo.FullName);
                     tarArchive.WriteEntry(tarEntry, true);
                 }
@@ -470,6 +514,112 @@ namespace AntDeployWinform.Util
             tarArchive.IsStreamOwner = false;
             tarArchive.Close();
             outputMemStream.Position = 0;
+            if (!haveFile)
+            {
+                throw new Exception("no file was packaged!");
+            }
+            return outputMemStream;
+        }
+
+        public static MemoryStream DoCreateTarFromDirectory(string sourceDirectory, List<string> fileList, List<string> ignoreList = null, Func<int,bool> progress = null,Logger logger = null, bool isSelectDeploy = false)
+        {
+            MemoryStream outputMemStream = new MemoryStream();
+            TarArchive tarArchive = TarArchive.CreateOutputTarArchive(outputMemStream);
+            tarArchive.RootPath = sourceDirectory.Replace('\\', '/');
+            if (tarArchive.RootPath.EndsWith("/"))
+                tarArchive.RootPath = tarArchive.RootPath.Remove(tarArchive.RootPath.Length - 1);
+
+            TarEntry tarEntry2 = TarEntry.CreateEntryFromFile(sourceDirectory);
+            tarArchive.WriteEntry(tarEntry2, false);
+
+            DirectoryInfo directoryInfo = new DirectoryInfo(sourceDirectory);
+            string fullName = directoryInfo.FullName;
+            if (directoryInfo.Parent != null)
+                fullName = directoryInfo.Parent.FullName;
+
+            var allFile = isSelectDeploy ? GetSelectDeployFiles(fileList) : GetFullFileInfo(fileList, sourceDirectory);// FindFileDir(sourceDirectory);
+            var allFileLength = allFile.Count();
+            var index = 0;
+            var haveFile = false;
+            foreach (FileSystemInfo enumerateFileSystemInfo in allFile)
+            {
+                index++;
+                var lastProgressNumber = (((long)index * 100 / allFileLength));
+                if (progress != null)
+                {
+                   var r = progress.Invoke((int)lastProgressNumber);
+                   if (r)
+                   {
+                       throw new Exception("deploy task was canceled!");
+                   }
+                }
+                
+
+                int length = enumerateFileSystemInfo.FullName.Length - fullName.Length;
+                string entryName = EntryFromPath(enumerateFileSystemInfo.FullName, fullName.Length, length);
+                if (ignoreList != null && ignoreList.Count>0)
+                {
+                    var mathchEntryName = entryName.Substring(directoryInfo.Name.Length);
+                    var haveMatch = false;
+                    foreach (var ignorRule in ignoreList)
+                    {
+                        try
+                        {
+                            if (ignorRule.StartsWith("*"))
+                            {
+                                var ignorRule2 = ignorRule.Substring(1);
+                                if (mathchEntryName.EndsWith(ignorRule2))
+                                {
+                                    haveMatch = true;
+                                    break;
+                                }
+                            }
+                            else
+                            {
+                                var isMatch = Regex.Match(mathchEntryName, ignorRule, RegexOptions.IgnoreCase);//忽略大小写
+                                if (isMatch.Success)
+                                {
+                                    haveMatch = true;
+                                    break;
+                                }
+                            }
+
+                        }
+                        catch (Exception ex)
+                        {
+                            throw new Exception($"Ignore Rule 【{ignorRule}】 regular error:" + ex.Message);
+                        }
+                    }
+
+                    if (haveMatch)
+                    {
+                        continue;
+                    }
+                }
+
+                if (enumerateFileSystemInfo is FileInfo)
+                {
+                    if (entryName.Contains("Dockerfile"))
+                    {
+                        logger?.Info($"Find Dockerfile In Package: {entryName}");
+                    }
+                    haveFile = true;
+                    TarEntry tarEntry = TarEntry.CreateEntryFromFile(enumerateFileSystemInfo.FullName);
+                    tarArchive.WriteEntry(tarEntry, true);
+                }
+                else
+                {
+                    TarEntry tarEntry = TarEntry.CreateEntryFromFile(enumerateFileSystemInfo.FullName);
+                    tarArchive.WriteEntry(tarEntry, false);
+                }
+            }
+            tarArchive.IsStreamOwner = false;
+            tarArchive.Close();
+            outputMemStream.Position = 0;
+            if (!haveFile)
+            {
+                throw new Exception("no file was packaged!");
+            }
             return outputMemStream;
         }
 

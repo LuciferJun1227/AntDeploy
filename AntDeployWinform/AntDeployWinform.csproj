@@ -72,7 +72,20 @@
     <Reference Include="System.Net.WebSockets.Client.Managed">
       <HintPath>..\packages\System.Net.WebSockets.Client.Managed.1.0.22\lib\net45\System.Net.WebSockets.Client.Managed.dll</HintPath>
     </Reference>
+    <Reference Include="System.Reactive, Version=4.1.0.0, Culture=neutral, PublicKeyToken=94bc3704cddfc263, processorArchitecture=MSIL">
+      <HintPath>..\packages\System.Reactive.4.1.5\lib\net46\System.Reactive.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe, Version=4.0.4.1, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <HintPath>..\packages\System.Runtime.CompilerServices.Unsafe.4.5.2\lib\netstandard1.0\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
     <Reference Include="System.ServiceProcess" />
+    <Reference Include="System.Threading.Tasks.Extensions, Version=4.2.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\packages\System.Threading.Tasks.Extensions.4.5.2\lib\portable-net45+win8+wp8+wpa81\System.Threading.Tasks.Extensions.dll</HintPath>
+    </Reference>
+    <Reference Include="System.ValueTuple, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\packages\System.ValueTuple.4.5.0\lib\netstandard1.0\System.ValueTuple.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Windows" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
@@ -81,6 +94,7 @@
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
+    <Reference Include="WindowsBase" />
     <Reference Include="WinFormAnimation">
       <HintPath>..\packages\WinFormAnimation.1.5.6298.3372\lib\net35-client\WinFormAnimation.dll</HintPath>
     </Reference>
@@ -97,20 +111,35 @@
     <Compile Include="Models\ExRichTextBox.cs">
       <SubType>Component</SubType>
     </Compile>
+    <Compile Include="Models\FolderSelectDialog.cs" />
     <Compile Include="Models\GetVersionResult.cs" />
     <Compile Include="Models\Helpers\ExtensionMethods.cs" />
     <Compile Include="Models\Helpers\RoundedRectangleF.cs" />
     <Compile Include="Models\Helpers\Transparenter.cs" />
+    <Compile Include="Models\LinuxArgModel.cs" />
+    <Compile Include="Models\MessageBoxEx.cs" />
     <Compile Include="Models\ProgressBox.cs">
       <SubType>Component</SubType>
     </Compile>
     <Compile Include="Models\ProjectHelper.cs" />
     <Compile Include="Models\ProjectParam.cs" />
+    <Compile Include="Models\resx\Strings.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Strings.resx</DependentUpon>
+    </Compile>
     <Compile Include="Models\RichTextBoxPrintHelper.cs" />
     <Compile Include="Models\SpinningCircles.cs">
       <SubType>Component</SubType>
     </Compile>
     <Compile Include="Models\TempFileHelper.cs" />
+    <Compile Include="Models\TriStateTreeView.cs" />
+    <Compile Include="Models\TriStateTreeViewCtrl.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="Models\TriStateTreeViewCtrl.designer.cs">
+      <DependentUpon>TriStateTreeViewCtrl.cs</DependentUpon>
+    </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Util\CodingHelper.cs" />
     <Compile Include="Util\CommandHelper.cs" />
@@ -132,6 +161,18 @@
     </Compile>
     <Compile Include="Winform\Deploy.Designer.cs">
       <DependentUpon>Deploy.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Winform\FirstCreate.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Winform\FirstCreate.Designer.cs">
+      <DependentUpon>FirstCreate.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Winform\FirstService.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Winform\FirstService.Designer.cs">
+      <DependentUpon>FirstService.cs</DependentUpon>
     </Compile>
     <Compile Include="Winform\InputDialog.cs">
       <SubType>Form</SubType>
@@ -157,6 +198,15 @@
     <Compile Include="Winform\SelectProject.Designer.cs">
       <DependentUpon>SelectProject.cs</DependentUpon>
     </Compile>
+    <EmbeddedResource Include="Models\resx\Strings.resx">
+      <Generator>PublicResXFileCodeGenerator</Generator>
+      <LastGenOutput>Strings.Designer.cs</LastGenOutput>
+      <CustomToolNamespace>AntDeployWinform</CustomToolNamespace>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Models\resx\Strings.zh.resx" />
+    <EmbeddedResource Include="Models\TriStateTreeViewCtrl.resx">
+      <DependentUpon>TriStateTreeViewCtrl.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
@@ -188,6 +238,18 @@
     <EmbeddedResource Include="Winform\Deploy.zh.resx">
       <DependentUpon>Deploy.cs</DependentUpon>
     </EmbeddedResource>
+    <EmbeddedResource Include="Winform\FirstCreate.resx">
+      <DependentUpon>FirstCreate.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Winform\FirstCreate.zh-CN.resx">
+      <DependentUpon>FirstCreate.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Winform\FirstService.resx">
+      <DependentUpon>FirstService.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Winform\FirstService.zh-CN.resx">
+      <DependentUpon>FirstService.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Winform\InputDialog.resx">
       <DependentUpon>InputDialog.cs</DependentUpon>
     </EmbeddedResource>
@@ -195,6 +257,9 @@
       <DependentUpon>InputDialog.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Winform\RollBack.resx">
+      <DependentUpon>RollBack.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Winform\RollBack.zh-CN.resx">
       <DependentUpon>RollBack.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Winform\SelectFile.resx">
@@ -206,9 +271,13 @@
     <EmbeddedResource Include="Winform\SelectProject.resx">
       <DependentUpon>SelectProject.cs</DependentUpon>
     </EmbeddedResource>
+    <EmbeddedResource Include="Winform\SelectProject.zh-CN.resx">
+      <DependentUpon>SelectProject.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Winform\SelectProject.zh-Hans.resx">
       <DependentUpon>SelectProject.cs</DependentUpon>
     </EmbeddedResource>
+    <None Include="packages.config" />
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>
@@ -225,6 +294,9 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Resources\Logo12.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\zan.png" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

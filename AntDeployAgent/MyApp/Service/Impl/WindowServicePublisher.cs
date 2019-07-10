@@ -5,6 +5,7 @@ using AntDeployAgentWindows.Util;
 using AntDeployAgentWindows.WebApiCore;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -18,6 +19,8 @@ namespace AntDeployAgentWindows.MyApp.Service.Impl
         private bool _isNoStopWebSite;
         private string _serviceName;
         private string _serviceExecName;
+        private string _serviceDescription;
+        private string _serviceStartType;
         private int _waitForServiceStopTimeOut = 15;
         private List<string> _backUpIgnoreList = new List<string>();
         private string _projectPublishFolder;
@@ -93,10 +96,6 @@ namespace AntDeployAgentWindows.MyApp.Service.Impl
                 }
                 if (service.Item1 == null)
                 {
-                    //if (!_isProjectInstallService)
-                    //{
-                    //    return $"windowService : {_serviceName} not found";
-                    //}
 
                     Log($"windowService : {_serviceName} not found,start to create!");
 
@@ -130,9 +129,13 @@ namespace AntDeployAgentWindows.MyApp.Service.Impl
                     Log($"start to install windows service");
                     Log($"service name:{_serviceName}");
                     Log($"service path:{execFullPath}");
+                    Log($"service startType:{(!string.IsNullOrEmpty(_serviceStartType)?_serviceStartType:"Auto")}");
+                    Log($"service description:{_serviceDescription??string.Empty}");
+                   
+                    
                     try
                     {
-                        ServiceInstaller.InstallAndStart(_serviceName, _serviceName, execFullPath);
+                        ServiceInstaller.InstallAndStart(_serviceName, _serviceName, execFullPath,_serviceStartType,_serviceDescription);
                         Log($"install windows service success");
                         Log($"start windows service success");
                         return string.Empty;
@@ -142,24 +145,6 @@ namespace AntDeployAgentWindows.MyApp.Service.Impl
                         return $"install windows service fail:" + e2.Message;
                     }
 
-                    //var installResult = WindowServiceHelper.InstallWindowsService(execFullPath);
-                    //if (!string.IsNullOrEmpty(installResult))
-                    //{
-                    //    try{ Directory.Delete(firstDeployFolder, true);}catch (Exception) {}
-                    //    return installResult;
-                    //}
-
-
-                    ////部署成功 启动服务
-                    //Log($"start windows service : " + _serviceName);
-                    //var startResult = WindowServiceHelper.StartService(_serviceName,120);
-                    //if (!string.IsNullOrEmpty(startResult))
-                    //{
-                    //    try{ Directory.Delete(firstDeployFolder, true);}catch (Exception) {}
-                    //    return startResult;
-                    //}
-                    //Log($"start windows service success");
-                    //return string.Empty;
                 }
 
                 var projectLocationFolder = string.Empty;
@@ -184,10 +169,6 @@ namespace AntDeployAgentWindows.MyApp.Service.Impl
                     return "ServiceFolder is not correct ===> " + projectLocationFolder;
                 }
 
-                Log("Start to deploy Windows Service:");
-                Log("ServiceName ===>" + _serviceName);
-                Log("ServiceFolder ===> " + projectLocationFolder);
-
                 Arguments args = new Arguments
                 {
                     DeployType = "WindowsService",
@@ -196,8 +177,19 @@ namespace AntDeployAgentWindows.MyApp.Service.Impl
                     AppFolder = projectLocationFolder,
                     DeployFolder = deployFolder,
                     WaitForWindowsServiceStopTimeOut = _waitForServiceStopTimeOut,
-                    BackUpIgnoreList = this._backUpIgnoreList
+                    BackUpIgnoreList = this._backUpIgnoreList,
+                    NoBackup = !Setting.NeedBackUp
                 };
+
+                if (_serviceName.ToLower().Equals("antdeployagentwindowsservice"))
+                {
+                    return UpdateSelft(args);
+                }
+
+
+                Log("Start to deploy Windows Service:");
+                Log("ServiceName ===>" + _serviceName);
+                Log("ServiceFolder ===> " + projectLocationFolder);
 
                 if (_isNoStopWebSite)
                 {
@@ -330,12 +322,68 @@ namespace AntDeployAgentWindows.MyApp.Service.Impl
                 _physicalPath = physicalPath.TextValue;
             }
 
+            var desc = formHandler.FormItems.FirstOrDefault(r => r.FieldName.Equals("desc"));
+            if (desc != null && !string.IsNullOrEmpty(desc.TextValue))
+            {
+                _serviceDescription = desc.TextValue;
+            }
+
+            var startType = formHandler.FormItems.FirstOrDefault(r => r.FieldName.Equals("startType"));
+            if (startType != null && !string.IsNullOrEmpty(startType.TextValue))
+            {
+                _serviceStartType = startType.TextValue;
+            }
+
             var backUpIgnoreList = formHandler.FormItems.FirstOrDefault(r => r.FieldName.Equals("backUpIgnore"));
             if (backUpIgnoreList != null && !string.IsNullOrEmpty(backUpIgnoreList.TextValue))
             {
                 this._backUpIgnoreList = backUpIgnoreList.TextValue.Split(new string[] { "@_@" }, StringSplitOptions.None).ToList();
             }
             return string.Empty;
+        }
+
+        /// <summary>
+        /// 更新自己
+        /// </summary>
+        /// <returns></returns>
+        private string UpdateSelft(Arguments args)
+        {
+            try
+            {
+                Log("Start to update AntDeploy Agent:");
+                Log("ServiceName ===>" + _serviceName);
+                Log("ServiceFolder ===> " + args.AppFolder);
+
+
+                var selftCmd = Path.Combine(args.DeployFolder, "_deploy_end_.bat");
+                if (!File.Exists(selftCmd))
+                {
+                    Log($"【Error】File can not found : {selftCmd}");
+                    return $"File can not found : {selftCmd}";
+                }
+
+                Log("_deploy_end_.bat load success");
+
+                var fileText = File.ReadAllText(selftCmd);
+                fileText = fileText.Replace("$DeployFolder$", args.DeployFolder)
+                    .Replace("$AppFolder$", args.AppFolder);
+                File.WriteAllText(selftCmd, fileText);
+
+                using (Process p = new Process())
+                {
+                    p.StartInfo.FileName = selftCmd;
+                    p.StartInfo.CreateNoWindow = true;   //不创建该进程的窗口
+                    p.StartInfo.UseShellExecute = false;   //不使用shell壳运行
+                    p.Start();
+                }
+
+                Log("_deploy_end_.bat process start!!!");
+                return string.Empty;
+            }
+            catch (Exception e)
+            {
+                return e.Message;
+            }
         }
     }
 }

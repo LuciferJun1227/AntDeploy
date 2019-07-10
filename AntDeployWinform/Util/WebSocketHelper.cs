@@ -32,10 +32,12 @@ namespace AntDeployWinform.Util
         public bool HasError { get; set; }
         private ClientWebSocket webSocket = null;
         private bool _dispose = false;
+        private WebClient client;
         public WebSocketClient(Logger _receiveAction, HttpLogger _loggerKey)
         {
             this.receiveAction = _receiveAction;
             this.HttpLogger = _loggerKey;
+            client = new WebClientExtended();
         }
 
 
@@ -56,10 +58,23 @@ namespace AntDeployWinform.Util
                 Thread.Sleep(1000);
 
                 ReceiveHttpAction();
-            }
-            catch (Exception)
-            {
 
+
+            }
+            catch
+            {
+                //ignore
+            }
+            finally
+            {
+                try
+                {
+                    client.Dispose();
+                }
+                catch 
+                {
+                    //ignore
+                }
             }
         }
 
@@ -104,7 +119,7 @@ namespace AntDeployWinform.Util
                    }
                }).Start();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 //ignore
                 receiveAction.Debug($"WebSocket Connect Fail,Server excute logs will accept from http request");
@@ -160,11 +175,12 @@ namespace AntDeployWinform.Util
 
         public void ReceiveHttpAction(bool isLast = false)
         {
-            var client = new WebClient();
+           
             try
             {
                 
                 var rawData = client.DownloadData(new Uri(this.HttpLogger.Url));
+                if (rawData.Length < 1) return;
                 var encoding = WebUtil.GetEncodingFrom(client.ResponseHeaders, Encoding.UTF8);
                 var result = encoding.GetString(rawData);
 
@@ -200,11 +216,6 @@ namespace AntDeployWinform.Util
             {
 
             }
-            finally
-            {
-              
-                client.Dispose();
-            }
 
             if (isLast)
             {
@@ -213,15 +224,29 @@ namespace AntDeployWinform.Util
         }
 
         private string _agentVersion;
+        private bool _needUpdate;
         private void AgentCheckVersion(string receiveMsg)
         {
-            _agentVersion = receiveMsg;
-            var agentVersionArr = receiveMsg.Split(new string[] { "=>" }, StringSplitOptions.None);
+            var agentVersionArr = receiveMsg.Split(new string[] { "=>" }, StringSplitOptions.RemoveEmptyEntries);
             if (agentVersionArr.Length == 2)
             {
                 var agentVersion = agentVersionArr[1];
                 if (!agentVersion.Equals(Vsix.AGENTVERSION))
                 {
+                    var versionTemp = Vsix.AGENTVERSION.Replace(".", "");
+                    if(int.TryParse(versionTemp,out int versionTempInt))
+                    {
+                        var temp = agentVersion.Replace(".", "");
+                        if (int.TryParse(temp, out int _tempInt))
+                        {
+                            //如果服务端的agent 大于 本地的版本号 说明 客户端是旧的
+                            if (_tempInt > versionTempInt)
+                            {
+                                _needUpdate = true;
+                                return;
+                            }
+                        }
+                    }
                     _agentVersion = agentVersion;
                 }
             }
@@ -229,6 +254,16 @@ namespace AntDeployWinform.Util
 
         private void LogAgentCheckVersion()
         {
+            if (_needUpdate)
+            {
+                this.receiveAction.Warn($"【Server】You need update AntDeploy!");
+                LogEventInfo theEvent2 = new LogEventInfo(LogLevel.Warn, "", "【Server】Download AntDeploy Url:");
+                theEvent2.LoggerName = receiveAction.Name;
+                theEvent2.Properties["ShowLink"] = "https://marketplace.visualstudio.com/items?itemName=nainaigu.AntDeploy";
+                this.receiveAction.Log(theEvent2);
+                return;
+            }
+
             if (string.IsNullOrEmpty(_agentVersion))
             {
                 return;
@@ -316,5 +351,17 @@ namespace AntDeployWinform.Util
         public DateTime Date { get; set; }
         public bool IsActive { get; set; }
 
+    }
+    
+    public class WebClientExtended : WebClient
+    {
+        protected override WebRequest GetWebRequest(Uri uri)
+        {
+            var w = (HttpWebRequest) base.GetWebRequest(uri);
+            w.Timeout = 5000;      // Set timeout
+            w.KeepAlive = true;    // Set keepalive true or false
+            w.ServicePoint.SetTcpKeepAlive(true, 1000, 5000);  // Set tcp keepalive
+            return w;
+        }
     }
 }

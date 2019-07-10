@@ -3,6 +3,8 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reactive.Linq;
+using NLog;
 
 namespace AntDeployWinform.Util
 {
@@ -12,6 +14,8 @@ namespace AntDeployWinform.Util
     /// </summary>
     public class CommandHelper
     {
+  
+
 
         public static string MsBuildPath = "";
 
@@ -23,7 +27,7 @@ namespace AntDeployWinform.Util
         /// <param name="logger"></param>
         /// <param name="isWeb"></param>
         /// <returns></returns>
-        public static bool RunMsbuild(string path, string publishPath, NLog.Logger logger, bool isWeb = false)
+        public static bool RunMsbuild(string path, string publishPath, NLog.Logger logger, bool isWeb = false,Func<bool> checkCancel = null)
         {
             var msBuild = MsBuildPath;
             if (string.IsNullOrEmpty(msBuild))
@@ -43,7 +47,7 @@ namespace AntDeployWinform.Util
             var buildArg = "\"" + path.Replace("\\\\", "\\") + "\"";
             if (isWeb)
             {
-                buildArg += " /verbosity:minimal /p:Configuration=Release /p:Platform=AnyCPU /t:WebPublish /p:WebPublishMethod=FileSystem /p:DeleteExistingFiles=False /p:publishUrl=\"" + path2 + "\"";
+                buildArg += " /verbosity:minimal /p:Configuration=Release /p:DeployOnBuild=true /p:Platform=AnyCPU /t:WebPublish /p:WebPublishMethod=FileSystem /p:DeleteExistingFiles=False /p:publishUrl=\"" + path2 + "\"";
             }
             else
             {
@@ -54,7 +58,7 @@ namespace AntDeployWinform.Util
             //先清空目录
             ClearPublishFolder(path2);
             logger.Info($"current project Path:{path}");
-            return RunDotnetExternalExe(string.Empty, msbuildPath, buildArg, logger);
+            return RunDotnetExternalExe(string.Empty, msbuildPath, buildArg, logger, checkCancel);
         }
 
         /// <summary>
@@ -67,7 +71,7 @@ namespace AntDeployWinform.Util
         /// <param name="logger"></param>
         /// <returns></returns>
         public static bool RunDotnetExe(string projectPath,string fileName, string publishPath, string arguments,
-            NLog.Logger logger)
+            NLog.Logger logger, Func<bool> checkCancel = null)
         {
             if (!string.IsNullOrEmpty(publishPath))
             {
@@ -85,7 +89,7 @@ namespace AntDeployWinform.Util
                 arguments += " -o \"" + publishPath + "\"";
             }
             logger.Info($"current project Path:{projectPath}");
-            return RunDotnetExternalExe(string.Empty, $"dotnet", arguments, logger);
+            return RunDotnetExternalExe(string.Empty, $"dotnet", arguments, logger, checkCancel);
         }
 
         /// <summary>
@@ -96,9 +100,10 @@ namespace AntDeployWinform.Util
         /// <param name="arguments"></param>
         /// <param name="logger"></param>
         /// <returns></returns>
-        private static bool RunDotnetExternalExe(string projectPath, string fileName, string arguments, NLog.Logger logger)
+        private static bool RunDotnetExternalExe(string projectPath, string fileName, string arguments, NLog.Logger logger, Func<bool> checkCancel = null)
         {
             Process process = null;
+            BuildProgress pr = null;
             try
             {
                 try
@@ -115,6 +120,7 @@ namespace AntDeployWinform.Util
                 }
 
                 //执行dotnet命令如果 projectdir路径含有空格 或者 outDir 路径含有空格 都是没有问题的
+                pr = new BuildProgress(logger);
 
                 process = new Process();
 
@@ -135,19 +141,56 @@ namespace AntDeployWinform.Util
 
                 process.OutputDataReceived += (sender, args) =>
                 {
+                    if (checkCancel != null)
+                    {
+                        var r = checkCancel();
+                        if (r)
+                        {
+
+                            try
+                            {
+                                process?.Dispose();
+                            }
+                            catch (Exception)
+                            {
+                                //ignore
+                            }
+                          
+                            try
+                            {
+                                process?.Kill();
+                            }
+                            catch (Exception)
+                            {
+                                //ignore
+                            }
+                        }
+                    }
                     if (!string.IsNullOrWhiteSpace(args.Data))
                     {
                         if (!args.Data.StartsWith(" ") && args.Data.Contains(": error"))
                         {
-                            logger?.Warn(args.Data);
+                            pr.Log(new BuildEventArgs
+                            {
+                                level = LogLevel.Warn,
+                                message = args.Data
+                            });
                         }
                         else if (args.Data.Contains(".csproj : error"))
                         {
-                            logger?.Error(args.Data);
+                            pr.Log(new BuildEventArgs
+                            {
+                                level = LogLevel.Error,
+                                message = args.Data
+                            });
                         }
                         else
                         {
-                            logger?.Info(args.Data);
+                            pr.Log(new BuildEventArgs
+                            {
+                                level = LogLevel.Info,
+                                message = args.Data
+                            });
                         }
                     }
                 };
@@ -155,7 +198,41 @@ namespace AntDeployWinform.Util
 
                 process.ErrorDataReceived += (sender, data) =>
                 {
-                    if (!string.IsNullOrWhiteSpace(data.Data)) logger?.Error(data.Data);
+
+                    if (checkCancel != null)
+                    {
+                        var r = checkCancel();
+                        if (r)
+                        {
+
+                            try
+                            {
+                                process?.Dispose();
+                            }
+                            catch (Exception)
+                            {
+                                //ignore
+                            }
+
+                            try
+                            {
+                                process?.Kill();
+                            }
+                            catch (Exception)
+                            {
+                                //ignore
+                            }
+                        }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(data.Data))
+                    {
+                        pr.Log(new BuildEventArgs
+                        {
+                            level = LogLevel.Error,
+                            message = data.Data
+                        });
+                    }
                 };
                 process.BeginErrorReadLine();
 
@@ -173,12 +250,46 @@ namespace AntDeployWinform.Util
             }
             catch (Exception ex)
             {
+                if (checkCancel != null)
+                {
+                    var r = checkCancel();
+                    if (r)
+                    {
+                        logger?.Error("deploy task was canceled!");
+                        return false;
+                    }
+                }
+               
                 logger?.Error(ex.Message);
                 return false;
             }
             finally
             {
-                process?.Dispose();
+                try
+                {
+                    process?.Kill();
+                }
+                catch (Exception)
+                {
+                    //ignore
+                }
+                try
+                {
+                    pr?.Dispose();
+                }
+                catch (Exception)
+                {
+                    //ignore
+                }
+                try
+                {
+                    process?.Dispose();
+                }
+                catch (Exception)
+                {
+                    //ignore
+                }
+                
             }
         }
 
@@ -253,6 +364,65 @@ namespace AntDeployWinform.Util
 
             return string.Empty;
         }
+
+    }
+
+    public class BuildProgress:IDisposable
+    {
+        public event EventHandler<BuildEventArgs> BuildEvent;
+
+        private readonly Logger _logger;
+
+        private readonly IDisposable _subscribe;
+        public BuildProgress(Logger logger)
+        {
+            _logger = logger;
+
+            _subscribe = System.Reactive.Linq.Observable
+                .FromEventPattern<BuildEventArgs>(this, "BuildEvent")
+                .Sample(TimeSpan.FromMilliseconds(100))
+                .Subscribe(arg => { OnBuildEvent(arg.Sender, arg.EventArgs); });
+        }
+
+        private void OnBuildEvent(object objSender, BuildEventArgs objEventArgs)
+        {
+            if (objEventArgs.level == LogLevel.Warn)
+            {
+                _logger.Warn(objEventArgs.message);
+                return;
+            }
+
+            if (objEventArgs.level == LogLevel.Error)
+            {
+                _logger.Error(objEventArgs.message);
+                return;
+            }
+
+            _logger.Info(objEventArgs.message);
+        }
+
+        public void Log(BuildEventArgs ar)
+        {
+            if (BuildEvent == null)
+            {
+                OnBuildEvent(null, ar);
+            }
+            else
+            {
+                BuildEvent(this, ar);
+            }
+        }
+
+        public void Dispose()
+        {
+            _subscribe?.Dispose();
+        }
+    }
+
+    public class BuildEventArgs : EventArgs
+    {
+        public LogLevel level { get; set; }
+        public string message { get; set; }
 
     }
 }
